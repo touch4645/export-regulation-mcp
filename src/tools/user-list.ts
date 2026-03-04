@@ -5,8 +5,10 @@ import { CACHE_TTLS } from "../types/index.js";
 import type { UserListEntry } from "../types/index.js";
 import * as XLSX from "xlsx";
 
-const METI_PAGE_URL = "https://www.meti.go.jp/policy/anpo/law05.html";
+const METI_PAGE_URL = "https://www.meti.go.jp/policy/anpo/law00.html";
 const METI_BASE_URL = "https://www.meti.go.jp";
+const USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 async function fetchAndParseExcel(): Promise<UserListEntry[]> {
   // Fetch the METI page to find the Excel file link
@@ -14,6 +16,7 @@ async function fetchAndParseExcel(): Promise<UserListEntry[]> {
   const timeoutId = setTimeout(() => controller.abort(), 30_000);
   const pageResponse = await fetch(METI_PAGE_URL, {
     signal: controller.signal,
+    headers: { "User-Agent": USER_AGENT },
   });
   clearTimeout(timeoutId);
 
@@ -24,19 +27,31 @@ async function fetchAndParseExcel(): Promise<UserListEntry[]> {
   const html = await pageResponse.text();
 
   // Find .xlsx links related to the user list (外国ユーザーリスト)
-  const xlsxPattern = /href=["']([^"']*\.xlsx?)["']/gi;
-  const matches: string[] = [];
+  // Prefer links whose surrounding text contains "外国ユーザーリスト"
+  const userListPattern =
+    /href=["']([^"']*\.xlsx?)["'][^>]*>([^<]*外国ユーザーリスト[^<]*)</gi;
+  const generalPattern = /href=["']([^"']*\.xlsx?)["']/gi;
+
+  let xlsxUrl: string | null = null;
+
+  // First try to find xlsx link explicitly labeled as 外国ユーザーリスト
   let match: RegExpExecArray | null;
-  while ((match = xlsxPattern.exec(html)) !== null) {
-    matches.push(match[1]);
+  while ((match = userListPattern.exec(html)) !== null) {
+    xlsxUrl = match[1];
+    break;
   }
 
-  if (matches.length === 0) {
+  // Fallback: pick the first xlsx link on the page
+  if (!xlsxUrl) {
+    while ((match = generalPattern.exec(html)) !== null) {
+      xlsxUrl = match[1];
+      break;
+    }
+  }
+
+  if (!xlsxUrl) {
     throw new Error("No Excel file links found on METI page");
   }
-
-  // Pick the first xlsx link (the user list file)
-  let xlsxUrl = matches[0];
   if (xlsxUrl.startsWith("/")) {
     xlsxUrl = `${METI_BASE_URL}${xlsxUrl}`;
   } else if (!xlsxUrl.startsWith("http")) {
@@ -48,6 +63,7 @@ async function fetchAndParseExcel(): Promise<UserListEntry[]> {
   const xlsxTimeoutId = setTimeout(() => xlsxController.abort(), 60_000);
   const xlsxResponse = await fetch(xlsxUrl, {
     signal: xlsxController.signal,
+    headers: { "User-Agent": USER_AGENT },
   });
   clearTimeout(xlsxTimeoutId);
 
