@@ -30,12 +30,12 @@ export function registerAnnexTools(server: McpServer): void {
           elm
         );
 
-        if (data.result.code !== "0") {
+        if (!data.law_full_text) {
           return {
             content: [
               {
                 type: "text" as const,
-                text: `別表の取得に失敗しました: ${data.result.message}\ne-Gov APIから別表データを取得できませんでした。法令全体を取得して確認してください。\n法令ID: ${LAW_IDS.EXPORT_TRADE_CONTROL_ORDER}`,
+                text: `別表データが取得できませんでした。\ne-Gov APIから別表データを取得できませんでした。法令全体を取得して確認してください。\n法令ID: ${LAW_IDS.EXPORT_TRADE_CONTROL_ORDER}`,
               },
             ],
           };

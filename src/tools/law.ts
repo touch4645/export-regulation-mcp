@@ -33,7 +33,7 @@ export function registerLawTools(server: McpServer): void {
       try {
         const { data, fromCache, stale } = await getLawData(law_id, elm);
 
-        if (data.result.code !== "0") {
+        if (!data.law_full_text) {
           // Suggest known law IDs
           const suggestions = Object.entries(KNOWN_LAWS)
             .map(([name, id]) => `  ${name}: ${id}`)
@@ -42,7 +42,7 @@ export function registerLawTools(server: McpServer): void {
             content: [
               {
                 type: "text" as const,
-                text: `法令データの取得に失敗しました: ${data.result.message}\n\n主要な輸出管理関連法令ID:\n${suggestions}`,
+                text: `法令データが取得できませんでした。法令IDを確認してください。\n\n主要な輸出管理関連法令ID:\n${suggestions}`,
               },
             ],
           };
@@ -98,12 +98,12 @@ export function registerLawTools(server: McpServer): void {
       try {
         const { data, stale } = await searchByKeyword(keyword, law_type);
 
-        if (data.result.code !== "0") {
+        if (!data.items) {
           return {
             content: [
               {
                 type: "text" as const,
-                text: `検索に失敗しました: ${data.result.message}`,
+                text: `検索結果が取得できませんでした。キーワードを変えて再度お試しください。`,
               },
             ],
           };

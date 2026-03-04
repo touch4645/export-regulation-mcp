@@ -62,7 +62,7 @@ export function registerCountryTools(server: McpServer): void {
           "AppdxTable[3]"
         );
 
-        if (data.result.code === "0" && data.law_full_text) {
+        if (data.law_full_text) {
           const content = extractText(data.law_full_text);
 
           // Parse country names from the content

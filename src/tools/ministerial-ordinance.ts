@@ -23,12 +23,12 @@ export function registerMinisterialOrdinanceTools(server: McpServer): void {
           elm
         );
 
-        if (data.result.code !== "0") {
+        if (!data.law_full_text) {
           return {
             content: [
               {
                 type: "text" as const,
-                text: `貨物等省令の取得に失敗しました: ${data.result.message}\n法令ID: ${LAW_IDS.GOODS_MINISTERIAL_ORDINANCE}`,
+                text: `貨物等省令の取得に失敗しました: 法令データが取得できませんでした\n法令ID: ${LAW_IDS.GOODS_MINISTERIAL_ORDINANCE}`,
               },
             ],
           };

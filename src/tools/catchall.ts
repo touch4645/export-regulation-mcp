@@ -22,12 +22,12 @@ export function registerCatchallTools(server: McpServer): void {
           "AppdxTable[7]"
         );
 
-        if (data.result.code !== "0") {
+        if (!data.law_full_text) {
           return {
             content: [
               {
                 type: "text" as const,
-                text: `別表第3の2の取得に失敗しました: ${data.result.message}`,
+                text: "別表第3の2の取得に失敗しました: 法令データが取得できませんでした",
               },
             ],
           };
@@ -76,12 +76,12 @@ export function registerCatchallTools(server: McpServer): void {
           article ? `Article[${article}]` : undefined
         );
 
-        if (data.result.code !== "0") {
+        if (!data.law_full_text) {
           return {
             content: [
               {
                 type: "text" as const,
-                text: `おそれ省令の取得に失敗しました: ${data.result.message}`,
+                text: "おそれ省令の取得に失敗しました: 法令データが取得できませんでした",
               },
             ],
           };
@@ -138,12 +138,12 @@ export function registerCatchallTools(server: McpServer): void {
           LAW_IDS.TARIFF_LAW
         );
 
-        if (data.result.code !== "0") {
+        if (!data.law_full_text) {
           return {
             content: [
               {
                 type: "text" as const,
-                text: `関税定率法の取得に失敗しました: ${data.result.message}`,
+                text: "関税定率法の取得に失敗しました: 法令データが取得できませんでした",
               },
             ],
           };

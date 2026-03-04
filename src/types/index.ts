@@ -8,12 +8,10 @@ export interface EGovTreeNode {
 }
 
 export interface EGovLawDataResponse {
-  result: {
-    code: string;
-    message: string;
-  };
   law_full_text?: EGovTreeNode;
   law_info?: LawInfo;
+  attached_files_info?: unknown;
+  revision_info?: unknown;
 }
 
 export interface LawInfo {
@@ -36,12 +34,10 @@ export interface EGovKeywordItem {
 }
 
 export interface EGovKeywordResponse {
-  result: {
-    code: string;
-    message: string;
-  };
   total_count?: number;
   items?: EGovKeywordItem[];
+  sentence_count?: number;
+  next_offset?: number;
 }
 
 // e-Gov laws list response
@@ -55,10 +51,6 @@ export interface EGovLawsItem {
 }
 
 export interface EGovLawsResponse {
-  result: {
-    code: string;
-    message: string;
-  };
   total_count?: number;
   laws?: EGovLawsItem[];
 }
