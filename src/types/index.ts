@@ -1,11 +1,18 @@
 // e-Gov API v2 response types
 
+// Tree node structure returned by e-Gov API v2 JSON format
+export interface EGovTreeNode {
+  tag: string;
+  attr?: Record<string, string>;
+  children?: (EGovTreeNode | string)[];
+}
+
 export interface EGovLawDataResponse {
   result: {
     code: string;
     message: string;
   };
-  law_full_text?: LawFullText;
+  law_full_text?: EGovTreeNode;
   law_info?: LawInfo;
 }
 
@@ -18,90 +25,42 @@ export interface LawInfo {
   enforcement_date?: string;
 }
 
-export interface LawFullText {
-  law: LawElement;
-}
-
-export interface LawElement {
-  law_type?: string;
-  law_num?: string;
-  law_body: LawBody;
-}
-
-export interface LawBody {
-  law_title?: string;
-  main_provision?: MainProvision;
-  suppl_provision?: unknown[];
-  appdx_table?: AppdxTable[];
-}
-
-export interface MainProvision {
-  article?: Article[];
-  chapter?: Chapter[];
-}
-
-export interface Chapter {
-  chapter_title?: string;
-  article?: Article[];
-}
-
-export interface Article {
-  article_title?: string;
-  article_caption?: string;
-  paragraph?: Paragraph[];
-}
-
-export interface Paragraph {
-  paragraph_num?: string;
-  paragraph_sentence?: Sentence;
-  item?: Item[];
-}
-
-export interface Sentence {
-  sentence?: Array<{ content: string }>;
-}
-
-export interface Item {
-  item_title?: string;
-  item_sentence?: Sentence;
-  sub_item1?: SubItem[];
-}
-
-export interface SubItem {
-  sub_item1_title?: string;
-  sub_item1_sentence?: Sentence;
-  sub_item2?: SubItem2[];
-}
-
-export interface SubItem2 {
-  sub_item2_title?: string;
-  sub_item2_sentence?: Sentence;
-}
-
-export interface AppdxTable {
-  appdx_table_title?: string;
-  table_struct?: unknown;
-  remarks?: unknown;
-}
-
 // e-Gov keyword search response
+export interface EGovKeywordItem {
+  law_info: LawInfo;
+  revision_info?: {
+    law_revision_id?: string;
+    law_type?: string;
+    updated_date?: string;
+  };
+}
+
 export interface EGovKeywordResponse {
   result: {
     code: string;
     message: string;
   };
   total_count?: number;
-  laws?: LawInfo[];
+  items?: EGovKeywordItem[];
 }
 
 // e-Gov laws list response
+export interface EGovLawsItem {
+  law_info: LawInfo;
+  revision_info?: {
+    law_revision_id?: string;
+    law_type?: string;
+    updated_date?: string;
+  };
+}
+
 export interface EGovLawsResponse {
   result: {
     code: string;
     message: string;
   };
   total_count?: number;
-  laws?: LawInfo[];
+  laws?: EGovLawsItem[];
 }
 
 // Cache types
@@ -150,7 +109,22 @@ export const LAW_IDS = {
   EXPORT_TRADE_CONTROL_ORDER: "324CO0000000378", // 輸出貿易管理令
   FOREIGN_EXCHANGE_ORDER: "355CO0000000260", // 外国為替令
   GOODS_MINISTERIAL_ORDINANCE: "403M50000400049", // 貨物等省令
+  FEAR_ORDINANCE: "413M60000400249", // おそれ省令（輸出貿易管理令別表第一及び外国為替令別表の規定に基づき貨物又は技術を定める省令の運用について）
+  TARIFF_LAW: "143AC0000000054", // 関税定率法
+  COMPLIANCE_STANDARDS: "421M60000400060", // 輸出者等遵守基準省令
 } as const;
+
+// 輸出貿易管理令の別表番号 → e-Gov elm パラメータ マッピング
+export const ANNEX_TABLE_MAP: Record<string, string> = {
+  "1": "AppdxTable[1]",
+  "2": "AppdxTable[2]",
+  "3": "AppdxTable[3]",
+  "4": "AppdxTable[4]",
+  "5": "AppdxTable[5]",
+  "6": "AppdxTable[6]",
+  "3-2": "AppdxTable[7]",
+  "3-3": "AppdxTable[8]",
+};
 
 // Cache TTLs in milliseconds
 export const CACHE_TTLS = {

@@ -6,6 +6,7 @@ import { registerMinisterialOrdinanceTools } from "./tools/ministerial-ordinance
 import { registerParameterThresholdTools } from "./tools/parameter-thresholds.js";
 import { registerCountryTools } from "./tools/country.js";
 import { registerUserListTools } from "./tools/user-list.js";
+import { registerCatchallTools } from "./tools/catchall.js";
 
 const server = new McpServer({
   name: "export-regulation-mcp",
@@ -19,6 +20,7 @@ registerMinisterialOrdinanceTools(server);
 registerParameterThresholdTools(server);
 registerCountryTools(server);
 registerUserListTools(server);
+registerCatchallTools(server);
 
 // Start server with stdio transport
 async function main() {

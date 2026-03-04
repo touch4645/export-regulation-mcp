@@ -3,44 +3,167 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { getCache, setCache } from "../lib/cache.js";
 import { CACHE_TTLS } from "../types/index.js";
 import type { UserListEntry } from "../types/index.js";
+import * as XLSX from "xlsx";
 
-// METI End-User List URL (CSV)
-const USER_LIST_URL =
-  "https://www.meti.go.jp/policy/anpo/law05.html";
+const METI_PAGE_URL = "https://www.meti.go.jp/policy/anpo/law05.html";
+const METI_BASE_URL = "https://www.meti.go.jp";
 
-async function fetchUserList(): Promise<UserListEntry[]> {
+async function fetchAndParseExcel(): Promise<UserListEntry[]> {
+  // Fetch the METI page to find the Excel file link
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30_000);
+  const pageResponse = await fetch(METI_PAGE_URL, {
+    signal: controller.signal,
+  });
+  clearTimeout(timeoutId);
+
+  if (!pageResponse.ok) {
+    throw new Error(`Failed to fetch METI page: ${pageResponse.status}`);
+  }
+
+  const html = await pageResponse.text();
+
+  // Find .xlsx links related to the user list (外国ユーザーリスト)
+  const xlsxPattern = /href=["']([^"']*\.xlsx?)["']/gi;
+  const matches: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = xlsxPattern.exec(html)) !== null) {
+    matches.push(match[1]);
+  }
+
+  if (matches.length === 0) {
+    throw new Error("No Excel file links found on METI page");
+  }
+
+  // Pick the first xlsx link (the user list file)
+  let xlsxUrl = matches[0];
+  if (xlsxUrl.startsWith("/")) {
+    xlsxUrl = `${METI_BASE_URL}${xlsxUrl}`;
+  } else if (!xlsxUrl.startsWith("http")) {
+    xlsxUrl = `${METI_BASE_URL}/policy/anpo/${xlsxUrl}`;
+  }
+
+  // Download the Excel file
+  const xlsxController = new AbortController();
+  const xlsxTimeoutId = setTimeout(() => xlsxController.abort(), 60_000);
+  const xlsxResponse = await fetch(xlsxUrl, {
+    signal: xlsxController.signal,
+  });
+  clearTimeout(xlsxTimeoutId);
+
+  if (!xlsxResponse.ok) {
+    throw new Error(`Failed to download Excel file: ${xlsxResponse.status}`);
+  }
+
+  const buffer = await xlsxResponse.arrayBuffer();
+  const workbook = XLSX.read(new Uint8Array(buffer), { type: "array" });
+
+  const entries: UserListEntry[] = [];
+
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    if (!sheet) continue;
+
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+      defval: "",
+    });
+
+    for (const row of rows) {
+      const values = Object.values(row).map((v) => String(v ?? "").trim());
+      // Skip empty rows or header rows
+      if (values.every((v) => !v)) continue;
+
+      // Try to extract organization name and country from columns
+      // The METI user list typically has: No, Country/Region, Organization, Type, etc.
+      const keys = Object.keys(row);
+      let organization = "";
+      let country = "";
+      let type = "";
+
+      for (const key of keys) {
+        const keyLower = String(key).toLowerCase();
+        const value = String(row[key] ?? "").trim();
+        if (!value) continue;
+
+        if (
+          keyLower.includes("企業") ||
+          keyLower.includes("組織") ||
+          keyLower.includes("名称") ||
+          keyLower.includes("organization") ||
+          keyLower.includes("entity") ||
+          keyLower.includes("name")
+        ) {
+          organization = value;
+        } else if (
+          keyLower.includes("国") ||
+          keyLower.includes("地域") ||
+          keyLower.includes("country") ||
+          keyLower.includes("region")
+        ) {
+          country = value;
+        } else if (
+          keyLower.includes("種別") ||
+          keyLower.includes("type") ||
+          keyLower.includes("懸念") ||
+          keyLower.includes("category")
+        ) {
+          type = value;
+        }
+      }
+
+      // Fallback: if structured parsing didn't work, try positional
+      if (!organization && values.length >= 3) {
+        // Common layout: [No, Country, Organization, ...]
+        country = values[1] || "";
+        organization = values[2] || "";
+        type = values.length > 3 ? values[3] : "";
+      }
+
+      if (organization) {
+        entries.push({
+          organization,
+          country,
+          type: type || "不明",
+        });
+      }
+    }
+  }
+
+  return entries;
+}
+
+async function fetchUserList(): Promise<{
+  entries: UserListEntry[];
+  fromCache: boolean;
+  stale: boolean;
+}> {
   // Try cache first
   const cached = await getCache<UserListEntry[]>("user_list");
   if (cached && !cached.stale) {
-    return cached.data;
+    return { entries: cached.data, fromCache: true, stale: false };
   }
 
-  // Note: The actual user list is published as an Excel/PDF file by METI.
-  // Programmatic access requires parsing that file.
-  // For now, we use a curated subset and instruct users to check the official source.
-  // In production, this would fetch and parse the actual METI data.
-
   try {
-    const response = await fetch(USER_LIST_URL);
-    if (!response.ok) {
-      if (cached) return cached.data;
-      throw new Error(`Failed to fetch user list page: ${response.status}`);
+    const entries = await fetchAndParseExcel();
+
+    if (entries.length > 0) {
+      await setCache("user_list", entries, CACHE_TTLS.USER_LIST);
     }
-    // The page contains links to the actual Excel files
-    // For this implementation, we note that parsing is needed
-    // and return cached/fallback data
-    if (cached) return cached.data;
-    return [];
+
+    return { entries, fromCache: false, stale: false };
   } catch {
-    if (cached) return cached.data;
-    return [];
+    // Fallback to stale cache if available
+    if (cached) {
+      return { entries: cached.data, fromCache: true, stale: true };
+    }
+    return { entries: [], fromCache: false, stale: false };
   }
 }
 
 export function registerUserListTools(server: McpServer): void {
   server.tool(
     "export_reg_check_user_list",
-    "経済産業省の外国ユーザーリスト（懸念企業リスト）に対して組織名を照合します。大量破壊兵器の開発等に関与している懸念のある企業・組織が掲載されています。注意: 現在はMETI公式ページへの参照案内が主な機能です。実際のリストデータはExcel/PDF形式で公開されており、自動取得には追加実装が必要です。",
+    "経済産業省の外国ユーザーリスト（懸念企業リスト）に対して組織名を照合します。大量破壊兵器の開発等に関与している懸念のある企業・組織が掲載されています。METIが公開するExcelデータを取得・解析して検索します。",
     {
       organization: z
         .string()
@@ -50,25 +173,19 @@ export function registerUserListTools(server: McpServer): void {
         .optional()
         .describe("国名で絞り込み（日本語）"),
     },
+    { readOnlyHint: true },
     async ({ organization, country }) => {
       try {
-        const entries = await fetchUserList();
+        const { entries, fromCache, stale } = await fetchUserList();
         const normalizedOrg = organization.toLowerCase().trim();
 
-        let matches: UserListEntry[];
-        if (entries.length > 0) {
-          matches = entries.filter((entry) => {
-            const orgMatch = entry.organization.toLowerCase().includes(normalizedOrg);
-            const countryMatch = country
-              ? entry.country.includes(country)
-              : true;
-            return orgMatch && countryMatch;
-          });
-        } else {
-          matches = [];
+        let text = "# 外国ユーザーリスト照合結果\n\n";
+        if (stale) {
+          text += "⚠️ キャッシュデータ（最新でない可能性があります）\n";
+        } else if (fromCache) {
+          text += "（キャッシュから取得）\n";
         }
 
-        let text = `# 外国ユーザーリスト照合結果\n\n`;
         text += `検索条件: 組織名="${organization}"`;
         if (country) text += `, 国="${country}"`;
         text += "\n\n";
@@ -76,34 +193,45 @@ export function registerUserListTools(server: McpServer): void {
         if (entries.length === 0) {
           text += "⚠️ 外国ユーザーリストのデータを取得できませんでした。\n\n";
           text += "経済産業省の公式ページで直接確認してください:\n";
-          text += `${USER_LIST_URL}\n\n`;
-          text += "外国ユーザーリストは以下からダウンロードできます:\n";
-          text += "- Excel形式: 経済産業省 安全保障貿易管理のページ\n";
-          text += "- 最新版は上記URLから取得してください\n";
-        } else if (matches.length > 0) {
-          text += `**⚠️ ${matches.length}件の一致が見つかりました**\n\n`;
-          for (const entry of matches) {
-            text += `### ${entry.organization}\n`;
-            text += `- 国: ${entry.country}\n`;
-            text += `- 種別: ${entry.type}\n`;
-            if (entry.updateDate) {
-              text += `- 更新日: ${entry.updateDate}\n`;
-            }
-            text += "\n";
-          }
-          text += "---\n";
-          text += "外国ユーザーリストに掲載されている組織への輸出は、キャッチオール規制の「客観要件」に該当する可能性があります。\n";
-          text += "経済産業省への個別許可申請を検討してください。\n";
+          text += `${METI_PAGE_URL}\n\n`;
+          text +=
+            "外国ユーザーリストはExcel形式で上記URLからダウンロードできます。\n";
         } else {
-          text += "一致する組織は見つかりませんでした。\n\n";
-          text += "注意:\n";
-          text += "- この結果は参考情報です。最終的な判断は経済産業省の最新の外国ユーザーリストで確認してください。\n";
-          text += "- 外国ユーザーリストに掲載されていなくても、輸出者自身が需要者の用途について懸念がある場合は経済産業省に相談してください。\n";
-        }
+          const filteredMatches = entries.filter((entry) => {
+            const orgMatch = entry.organization
+              .toLowerCase()
+              .includes(normalizedOrg);
+            const countryMatch = country
+              ? entry.country.includes(country)
+              : true;
+            return orgMatch && countryMatch;
+          });
 
-        // Cache the entries for future use
-        if (entries.length > 0) {
-          await setCache("user_list", entries, CACHE_TTLS.USER_LIST);
+          text += `データ件数: ${entries.length}件\n\n`;
+
+          if (filteredMatches.length > 0) {
+            text += `**⚠️ ${filteredMatches.length}件の一致が見つかりました**\n\n`;
+            for (const entry of filteredMatches) {
+              text += `### ${entry.organization}\n`;
+              text += `- 国: ${entry.country}\n`;
+              text += `- 種別: ${entry.type}\n`;
+              if (entry.updateDate) {
+                text += `- 更新日: ${entry.updateDate}\n`;
+              }
+              text += "\n";
+            }
+            text += "---\n";
+            text +=
+              "外国ユーザーリストに掲載されている組織への輸出は、キャッチオール規制の「客観要件」に該当する可能性があります。\n";
+            text += "経済産業省への個別許可申請を検討してください。\n";
+          } else {
+            text += "一致する組織は見つかりませんでした。\n\n";
+            text += "注意:\n";
+            text +=
+              "- この結果は参考情報です。最終的な判断は経済産業省の最新の外国ユーザーリストで確認してください。\n";
+            text +=
+              "- 外国ユーザーリストに掲載されていなくても、輸出者自身が需要者の用途について懸念がある場合は経済産業省に相談してください。\n";
+          }
         }
 
         return { content: [{ type: "text" as const, text }] };
@@ -112,7 +240,7 @@ export function registerUserListTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `ユーザーリスト照合に失敗しました: ${error instanceof Error ? error.message : String(error)}\n\n経済産業省の公式ページで直接確認してください:\n${USER_LIST_URL}`,
+              text: `ユーザーリスト照合に失敗しました: ${error instanceof Error ? error.message : String(error)}\n\n経済産業省の公式ページで直接確認してください:\n${METI_PAGE_URL}`,
             },
           ],
           isError: true,

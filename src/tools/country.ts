@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { getLawData } from "../lib/egov-client.js";
-import { extractText } from "../lib/xml-parser.js";
+import { extractText } from "../lib/law-parser.js";
 import { LAW_IDS, CACHE_TTLS } from "../types/index.js";
 import { getCache, setCache } from "../lib/cache.js";
 
@@ -40,7 +40,7 @@ export function registerCountryTools(server: McpServer): void {
   server.tool(
     "export_reg_get_white_countries",
     "輸出貿易管理令別表第3に規定されるグループA国（旧ホワイト国）のリストを取得します。グループA国への輸出は包括許可が利用可能です。",
-    {},
+    { readOnlyHint: true },
     async () => {
       try {
         // Try to get from cache first
@@ -59,12 +59,11 @@ export function registerCountryTools(server: McpServer): void {
         // Fetch from e-Gov API (別表第3)
         const { data, stale } = await getLawData(
           LAW_IDS.EXPORT_TRADE_CONTROL_ORDER,
-          "別表第三"
+          "AppdxTable[3]"
         );
 
         if (data.result.code === "0" && data.law_full_text) {
-          const lawBody = data.law_full_text.law.law_body;
-          const content = extractText(lawBody);
+          const content = extractText(data.law_full_text);
 
           // Parse country names from the content
           // The format may vary, so we extract text and present it
@@ -113,6 +112,7 @@ export function registerCountryTools(server: McpServer): void {
         .string()
         .describe("確認する国名（日本語または英語）"),
     },
+    { readOnlyHint: true },
     async ({ country_name }) => {
       try {
         // Check against cached white countries

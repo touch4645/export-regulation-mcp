@@ -1,5 +1,5 @@
 import { getCache, setCache } from "./cache.js";
-import { CACHE_TTLS } from "../types/index.js";
+import { CACHE_TTLS, ANNEX_TABLE_MAP } from "../types/index.js";
 import type {
   EGovLawDataResponse,
   EGovKeywordResponse,
@@ -11,6 +11,40 @@ const BASE_URL = "https://laws.e-gov.go.jp/api/2";
 interface FetchOptions {
   cacheTtl?: number;
   cacheKey?: string;
+}
+
+/**
+ * Convert Japanese annex table names to AppdxTable[N] format.
+ * e.g. "別表第一" → "AppdxTable[1]", "別表第3の2" → "AppdxTable[7]"
+ */
+export function normalizeElm(elm: string): string {
+  // Already in AppdxTable format
+  if (elm.startsWith("AppdxTable")) return elm;
+
+  // 漢数字→アラビア数字変換
+  const kanjiToArabic: Record<string, string> = {
+    一: "1", 二: "2", 三: "3", 四: "4", 五: "5",
+    六: "6", 七: "7", 八: "8", 九: "9", 十: "10",
+  };
+
+  let normalized = elm;
+
+  // "別表第X" or "別表第Xの Y" patterns
+  const match = normalized.match(/別表第([一二三四五六七八九十\d]+)(?:の(\d+))?/);
+  if (match) {
+    let tableNum = match[1];
+    // Convert kanji to arabic
+    if (kanjiToArabic[tableNum]) {
+      tableNum = kanjiToArabic[tableNum];
+    }
+    const suffix = match[2] ? `-${match[2]}` : "";
+    const key = `${tableNum}${suffix}`;
+    if (ANNEX_TABLE_MAP[key]) {
+      return ANNEX_TABLE_MAP[key];
+    }
+  }
+
+  return elm;
 }
 
 async function fetchWithCache<T>(
@@ -67,11 +101,12 @@ export async function getLawData(
   if (!/^[A-Za-z0-9]+$/.test(lawId)) {
     throw new Error(`Invalid law ID format: ${lawId}`);
   }
+  const normalizedElm = elm ? normalizeElm(elm) : undefined;
   let url = `${BASE_URL}/law_data/${lawId}?response_format=json`;
-  if (elm) {
-    url += `&elm=${encodeURIComponent(elm)}`;
+  if (normalizedElm) {
+    url += `&elm=${encodeURIComponent(normalizedElm)}`;
   }
-  const cacheKey = elm ? `law_${lawId}_${elm}` : `law_${lawId}`;
+  const cacheKey = normalizedElm ? `law_${lawId}_${normalizedElm}` : `law_${lawId}`;
   return fetchWithCache<EGovLawDataResponse>(url, {
     cacheKey,
     cacheTtl: CACHE_TTLS.LAW_TEXT,

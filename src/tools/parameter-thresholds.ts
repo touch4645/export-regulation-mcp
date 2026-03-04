@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { getLawData } from "../lib/egov-client.js";
-import { extractText } from "../lib/xml-parser.js";
+import { extractText } from "../lib/law-parser.js";
 import { LAW_IDS } from "../types/index.js";
 
 const ITEM_CATEGORIES: Record<string, string> = {
@@ -34,6 +34,7 @@ export function registerParameterThresholdTools(server: McpServer): void {
           "項番（1〜15）。1=武器, 2=原子力, 3=化学兵器, 4=ミサイル, 5=先端材料, 6=材料加工, 7=エレクトロニクス, 8=コンピュータ, 9=通信, 10=センサー, 11=航法, 12=海洋, 13=推進, 14=その他, 15=機微品目"
         ),
     },
+    { readOnlyHint: true },
     async ({ item_number }) => {
       try {
         const category = ITEM_CATEGORIES[item_number];
@@ -50,7 +51,7 @@ export function registerParameterThresholdTools(server: McpServer): void {
 
         // Fetch both the annex and ministerial ordinance in parallel
         const [annexResult, ordinanceResult] = await Promise.all([
-          getLawData(LAW_IDS.EXPORT_TRADE_CONTROL_ORDER, `別表第一`),
+          getLawData(LAW_IDS.EXPORT_TRADE_CONTROL_ORDER, "AppdxTable[1]"),
           getLawData(LAW_IDS.GOODS_MINISTERIAL_ORDINANCE),
         ]);
 
@@ -62,9 +63,9 @@ export function registerParameterThresholdTools(server: McpServer): void {
 
         // Extract annex content
         text += "## 輸出貿易管理令 別表第1 対応部分\n\n";
-        const annexBody = annexResult.data.law_full_text?.law?.law_body;
-        if (annexBody) {
-          const annexContent = extractText(annexBody);
+        const annexFullText = annexResult.data.law_full_text;
+        if (annexFullText) {
+          const annexContent = extractText(annexFullText);
           // Try to find the relevant section for this item number
           const lines = annexContent.split("\n");
           const relevantLines: string[] = [];
@@ -86,9 +87,9 @@ export function registerParameterThresholdTools(server: McpServer): void {
 
         // Extract ordinance content
         text += "\n\n## 貨物等省令 対応条文\n\n";
-        const ordBody = ordinanceResult.data.law_full_text?.law?.law_body;
-        if (ordBody) {
-          const ordContent = extractText(ordBody);
+        const ordFullText = ordinanceResult.data.law_full_text;
+        if (ordFullText) {
+          const ordContent = extractText(ordFullText);
           // The ministerial ordinance articles roughly map to annex item numbers
           const lines = ordContent.split("\n");
           const relevantLines: string[] = [];

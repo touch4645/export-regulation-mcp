@@ -1,13 +1,16 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { getLawData, searchByKeyword } from "../lib/egov-client.js";
-import { extractText, extractArticles } from "../lib/xml-parser.js";
+import { extractText, extractArticles, extractLawTitle, findNodes } from "../lib/law-parser.js";
 import { LAW_IDS } from "../types/index.js";
 
 const KNOWN_LAWS: Record<string, string> = {
   輸出貿易管理令: LAW_IDS.EXPORT_TRADE_CONTROL_ORDER,
   外国為替令: LAW_IDS.FOREIGN_EXCHANGE_ORDER,
   貨物等省令: LAW_IDS.GOODS_MINISTERIAL_ORDINANCE,
+  おそれ省令: LAW_IDS.FEAR_ORDINANCE,
+  関税定率法: LAW_IDS.TARIFF_LAW,
+  輸出者等遵守基準省令: LAW_IDS.COMPLIANCE_STANDARDS,
 };
 
 export function registerLawTools(server: McpServer): void {
@@ -25,6 +28,7 @@ export function registerLawTools(server: McpServer): void {
         .optional()
         .describe("取得する要素の指定（例: 別表第一 など）"),
     },
+    { readOnlyHint: true },
     async ({ law_id, elm }) => {
       try {
         const { data, fromCache, stale } = await getLawData(law_id, elm);
@@ -44,9 +48,9 @@ export function registerLawTools(server: McpServer): void {
           };
         }
 
-        const lawBody = data.law_full_text?.law?.law_body;
-        const title = lawBody?.law_title ?? data.law_info?.law_title ?? "不明";
-        const articles = extractArticles(lawBody?.main_provision);
+        const lawFullText = data.law_full_text;
+        const title = extractLawTitle(lawFullText) || data.law_info?.law_title || "不明";
+        const articles = extractArticles(lawFullText);
 
         let text = `# ${title}\n`;
         if (stale) {
@@ -61,7 +65,7 @@ export function registerLawTools(server: McpServer): void {
           }
         } else {
           // Fallback: extract all text
-          text += `\n${extractText(lawBody)}\n`;
+          text += `\n${extractText(lawFullText)}\n`;
         }
 
         return { content: [{ type: "text" as const, text }] };
@@ -89,6 +93,7 @@ export function registerLawTools(server: McpServer): void {
         .optional()
         .describe("法令種別で絞り込み（例: 政令, 省令, 法律）"),
     },
+    { readOnlyHint: true },
     async ({ keyword, law_type }) => {
       try {
         const { data, stale } = await searchByKeyword(keyword, law_type);
@@ -110,13 +115,13 @@ export function registerLawTools(server: McpServer): void {
         }
         text += `件数: ${data.total_count ?? 0}\n\n`;
 
-        if (data.laws && data.laws.length > 0) {
-          for (const law of data.laws) {
-            text += `- **${law.law_title}**\n`;
-            text += `  法令ID: ${law.law_id}\n`;
-            text += `  法令番号: ${law.law_num}\n`;
-            if (law.promulgation_date) {
-              text += `  公布日: ${law.promulgation_date}\n`;
+        if (data.items && data.items.length > 0) {
+          for (const item of data.items) {
+            text += `- **${item.law_info.law_title}**\n`;
+            text += `  法令ID: ${item.law_info.law_id}\n`;
+            text += `  法令番号: ${item.law_info.law_num}\n`;
+            if (item.law_info.promulgation_date) {
+              text += `  公布日: ${item.law_info.promulgation_date}\n`;
             }
             text += "\n";
           }

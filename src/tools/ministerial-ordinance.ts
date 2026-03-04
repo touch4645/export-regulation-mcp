@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { getLawData } from "../lib/egov-client.js";
-import { extractText, extractArticles } from "../lib/xml-parser.js";
+import { extractText, extractArticles, extractLawTitle } from "../lib/law-parser.js";
 import { LAW_IDS } from "../types/index.js";
 
 export function registerMinisterialOrdinanceTools(server: McpServer): void {
@@ -14,6 +14,7 @@ export function registerMinisterialOrdinanceTools(server: McpServer): void {
         .optional()
         .describe("条文番号（例: 第1条, 第2条）。省略時は全文を取得"),
     },
+    { readOnlyHint: true },
     async ({ article }) => {
       try {
         const elm = article ? article : undefined;
@@ -33,9 +34,9 @@ export function registerMinisterialOrdinanceTools(server: McpServer): void {
           };
         }
 
-        const lawBody = data.law_full_text?.law?.law_body;
-        const title = lawBody?.law_title ?? "輸出貿易管理令別表第一及び外国為替令別表の規定に基づき貨物又は技術を定める省令";
-        const articles = extractArticles(lawBody?.main_provision);
+        const lawFullText = data.law_full_text;
+        const title = extractLawTitle(lawFullText) || "輸出貿易管理令別表第一及び外国為替令別表の規定に基づき貨物又は技術を定める省令";
+        const articles = extractArticles(lawFullText);
 
         let text = `# ${title}\n`;
         if (stale) {
@@ -49,7 +50,7 @@ export function registerMinisterialOrdinanceTools(server: McpServer): void {
             text += `\n## ${a.title}\n${a.content}\n`;
           }
         } else {
-          text += `\n${extractText(lawBody)}\n`;
+          text += `\n${extractText(lawFullText)}\n`;
         }
 
         return { content: [{ type: "text" as const, text }] };

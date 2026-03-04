@@ -1,8 +1,8 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { getLawData } from "../lib/egov-client.js";
-import { extractText, extractAppdxTables } from "../lib/xml-parser.js";
-import { LAW_IDS } from "../types/index.js";
+import { extractText, extractAppdxTables, findNodes } from "../lib/law-parser.js";
+import { LAW_IDS, ANNEX_TABLE_MAP } from "../types/index.js";
 
 export function registerAnnexTools(server: McpServer): void {
   server.tool(
@@ -20,10 +20,11 @@ export function registerAnnexTools(server: McpServer): void {
           "項番（1〜15）。指定すると該当項の詳細のみ取得。1=武器, 2=原子力, 3=化学兵器, 4=ミサイル, 5=先端材料, 6=材料加工, 7=エレクトロニクス, 8=コンピュータ, 9=通信, 10=センサー, 11=航法, 12=海洋, 13=推進, 14=その他, 15=機微品目"
         ),
     },
+    { readOnlyHint: true },
     async ({ table_number, item_number }) => {
       try {
         // Request the specific appendix table
-        const elm = `別表第${table_number}`;
+        const elm = ANNEX_TABLE_MAP[table_number] ?? `AppdxTable[${table_number}]`;
         const { data, fromCache, stale } = await getLawData(
           LAW_IDS.EXPORT_TRADE_CONTROL_ORDER,
           elm
@@ -40,8 +41,8 @@ export function registerAnnexTools(server: McpServer): void {
           };
         }
 
-        const lawBody = data.law_full_text?.law?.law_body;
-        const tables = extractAppdxTables(lawBody);
+        const lawFullText = data.law_full_text;
+        const tables = extractAppdxTables(lawFullText);
 
         let text = `# 輸出貿易管理令 別表第${table_number}\n`;
         if (stale) {
@@ -67,7 +68,7 @@ export function registerAnnexTools(server: McpServer): void {
           }
         } else {
           // Fallback: extract full text
-          text += `\n${extractText(lawBody)}\n`;
+          text += `\n${extractText(lawFullText)}\n`;
         }
 
         if (item_number) {
