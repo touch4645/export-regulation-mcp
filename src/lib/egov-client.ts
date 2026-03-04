@@ -57,6 +57,7 @@ async function fetchWithCache<T>(
   // Try cache first
   const cached = await getCache<T>(cacheKey);
   if (cached && !cached.stale) {
+    console.error(`[egov-client] Cache hit for ${cacheKey}`);
     return { data: cached.data, fromCache: true, stale: false };
   }
 
@@ -73,12 +74,30 @@ async function fetchWithCache<T>(
     if (!response.ok) {
       // If we have stale cache, use it as fallback
       if (cached) {
+        console.error(`[egov-client] API returned ${response.status}, using stale cache for ${cacheKey}`);
         return { data: cached.data, fromCache: true, stale: true };
       }
       throw new Error(`e-Gov API error: ${response.status} ${response.statusText}`);
     }
 
-    const data = (await response.json()) as T;
+    const rawData = (await response.json()) as Record<string, unknown>;
+    console.error(`[egov-client] Response keys for ${cacheKey}: ${Object.keys(rawData).join(', ')}`);
+
+    // v1形式のレスポンス（result wrapperあり）を検出してアンラップ
+    let data: T;
+    if (
+      'result' in rawData &&
+      typeof rawData.result === 'object' &&
+      rawData.result !== null &&
+      'code' in (rawData.result as Record<string, unknown>)
+    ) {
+      console.error(`[egov-client] Detected v1 response wrapper, unwrapping (code=${(rawData.result as Record<string, unknown>).code})`);
+      const { result, ...rest } = rawData;
+      data = rest as T;
+    } else {
+      data = rawData as T;
+    }
+
     try {
       await setCache(cacheKey, data, ttl);
     } catch {
@@ -88,6 +107,7 @@ async function fetchWithCache<T>(
   } catch (error) {
     // Network error — fallback to stale cache
     if (cached) {
+      console.error(`[egov-client] Network error, using stale cache for ${cacheKey}: ${error}`);
       return { data: cached.data, fromCache: true, stale: true };
     }
     throw error;
