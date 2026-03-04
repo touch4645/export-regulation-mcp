@@ -49,7 +49,7 @@ export function registerLawTools(server: McpServer): void {
         }
 
         const lawFullText = data.law_full_text;
-        const title = extractLawTitle(lawFullText) || data.law_info?.law_title || "不明";
+        const title = extractLawTitle(lawFullText) || data.revision_info?.law_title || data.law_info?.law_title || "不明";
         const articles = extractArticles(lawFullText);
 
         let text = `# ${title}\n`;
@@ -117,7 +117,8 @@ export function registerLawTools(server: McpServer): void {
 
         if (data.items && data.items.length > 0) {
           for (const item of data.items) {
-            text += `- **${item.law_info.law_title}**\n`;
+            const lawTitle = item.revision_info?.law_title || item.law_info.law_title || "（タイトル不明）";
+            text += `- **${lawTitle}**\n`;
             text += `  法令ID: ${item.law_info.law_id}\n`;
             text += `  法令番号: ${item.law_info.law_num}\n`;
             if (item.law_info.promulgation_date) {

@@ -7,11 +7,21 @@ export interface EGovTreeNode {
   children?: (EGovTreeNode | string)[];
 }
 
+export interface RevisionInfo {
+  law_revision_id?: string;
+  law_type?: string;
+  law_title?: string;
+  law_title_kana?: string;
+  abbrev?: string;
+  category?: string;
+  updated?: string;
+}
+
 export interface EGovLawDataResponse {
   law_full_text?: EGovTreeNode;
   law_info?: LawInfo;
   attached_files_info?: unknown;
-  revision_info?: unknown;
+  revision_info?: RevisionInfo;
 }
 
 export interface LawInfo {
@@ -26,11 +36,7 @@ export interface LawInfo {
 // e-Gov keyword search response
 export interface EGovKeywordItem {
   law_info: LawInfo;
-  revision_info?: {
-    law_revision_id?: string;
-    law_type?: string;
-    updated_date?: string;
-  };
+  revision_info?: RevisionInfo;
 }
 
 export interface EGovKeywordResponse {

@@ -13,30 +13,43 @@ const TESTS = [
   { name: 'export_reg_get_parameter_thresholds', args: { item_number: '4' } },
   { name: 'export_reg_get_white_countries', args: {} },
   { name: 'export_reg_check_country', args: { country_name: 'ベトナム' } },
-  { name: 'export_reg_check_user_list', args: { organization_name: 'テスト' } },
+  { name: 'export_reg_check_user_list', args: { organization: 'テスト' } },
   { name: 'export_reg_get_annex3_2', args: {} },
   { name: 'export_reg_get_fear_ordinance', args: {} },
   { name: 'export_reg_get_tariff_items', args: { category: '25' } },
 ];
 
-const TIMEOUT_MS = 60000; // 60s per tool call
+const TIMEOUT_MS = 120000; // 120s per tool call (large law texts take time)
 
 function send(proc, msg) {
   const line = JSON.stringify(msg) + '\n';
   proc.stdin.write(line);
 }
 
+/**
+ * Waits for a JSON-RPC response with the given id.
+ * Handles chunked stdout data by buffering partial lines.
+ */
 function waitForResponse(proc, id, timeoutMs) {
   return new Promise((resolve, reject) => {
+    let buffer = '';
     const timer = setTimeout(() => {
+      proc.stdout.off('data', onData);
       reject(new Error(`Timeout waiting for response id=${id}`));
     }, timeoutMs);
 
     function onData(chunk) {
-      const lines = chunk.toString().split('\n').filter(Boolean);
+      buffer += chunk.toString();
+      // Try to parse complete lines (newline-delimited JSON)
+      const lines = buffer.split('\n');
+      // Keep the last element (may be incomplete)
+      buffer = lines.pop() || '';
+
       for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
         try {
-          const parsed = JSON.parse(line);
+          const parsed = JSON.parse(trimmed);
           if (parsed.id === id) {
             clearTimeout(timer);
             proc.stdout.off('data', onData);
@@ -44,7 +57,7 @@ function waitForResponse(proc, id, timeoutMs) {
             return;
           }
         } catch {
-          // not JSON, ignore
+          // Not valid JSON yet, skip
         }
       }
     }
@@ -143,7 +156,7 @@ async function main() {
         results.push({ tool: test.name, status: 'FAIL', detail: snippet });
       } else {
         const preview = textContent.substring(0, 100).replace(/\n/g, ' ');
-        console.log(`  OK: ${preview}...`);
+        console.log(`  OK (${textContent.length} chars): ${preview}...`);
         results.push({ tool: test.name, status: 'PASS', detail: preview });
       }
     } catch (e) {
@@ -172,8 +185,8 @@ async function main() {
   console.log('='.repeat(80));
 
   if (stderrBuf.trim()) {
-    console.log('\nServer stderr output:');
-    console.log(stderrBuf.substring(0, 2000));
+    console.log('\nServer stderr output (last 2000 chars):');
+    console.log(stderrBuf.substring(stderrBuf.length - 2000));
   }
 
   proc.kill();
